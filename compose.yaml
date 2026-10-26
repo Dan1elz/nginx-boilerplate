@@ -1,0 +1,75 @@
+# Proxy de borda da VM: único projeto que publica 80/443.
+# Os outros projetos entram na rede proxy-net com um alias único e não publicam portas.
+name: nginx
+
+services:
+  nginx:
+    image: nginx-edge:${NGINX_VERSION:-1.30.6}
+    build:
+      context: .
+      args:
+        NGINX_VERSION: ${NGINX_VERSION:-1.30.6}
+    restart: unless-stopped
+    ports:
+      # Durante os testes: 127.0.0.1 e 8010/8011 no .env. Na virada: 0.0.0.0, 80 e 443
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-80}:80"
+      - "${HTTPS_BIND:-0.0.0.0}:${HTTPS_PORT:-443}:443"
+    environment:
+      # Nome do certificado em data/letsencrypt/live/<CERT_NAME>/
+      CERT_NAME: "${CERT_NAME:?defina CERT_NAME no .env, ex. example.com}"
+      # De quanto em quanto tempo o nginx confere se o certificado mudou (renovação)
+      CERT_WATCH_INTERVAL: ${CERT_WATCH_INTERVAL:-300}
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+      - ./nginx/sites:/etc/nginx/sites:ro
+      - ./nginx/errors:/usr/share/nginx/errors:ro
+      # Pasta inteira (live/ tem links para archive/)
+      - ./data/letsencrypt:/etc/letsencrypt:ro
+    tmpfs:
+      # Config gerada na inicialização (qual certificado usar)
+      - /etc/nginx/generated
+    networks:
+      - proxy-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # Renova o certificado (DNS-01 na Cloudflare). Só renova o que vence em menos de 30 dias,
+  # então rodar a cada 12h é barato. O nginx percebe o arquivo novo sozinho e recarrega.
+  certbot:
+    image: certbot/dns-cloudflare:${CERTBOT_VERSION:-v5.8.0}
+    restart: unless-stopped
+    entrypoint: >
+      /bin/sh -c 'trap exit TERM;
+      while :; do certbot renew --quiet --no-random-sleep-on-renew; sleep 12h & wait $${!}; done'
+    volumes:
+      - ./data/letsencrypt:/etc/letsencrypt
+      # Mesmo caminho usado na emissão: o renew lê de data/letsencrypt/renewal/<nome>.conf.
+      # create_host_path: false faz o compose falhar se o arquivo não existir,
+      # em vez de criar uma PASTA com esse nome (o padrão do Docker)
+      - type: bind
+        source: ./secrets/cloudflare.ini
+        target: /secrets/cloudflare.ini
+        read_only: true
+        bind:
+          create_host_path: false
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+networks:
+  proxy-net:
+    # Criada à mão uma vez (scripts/setup.sh): sobrevive ao nginx parado ou recriado
+    external: true

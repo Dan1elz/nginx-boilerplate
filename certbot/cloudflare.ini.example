@@ -1,0 +1,4 @@
+# Copiado para secrets/cloudflare.ini por scripts/setup.sh (chmod 600, fora do git).
+# Token: Cloudflare → My Profile → API Tokens → Create Token
+#   permissão Zone → DNS → Edit, escopo só na zona do domínio (ex.: example.com)
+dns_cloudflare_api_token = COLE_O_TOKEN_AQUI

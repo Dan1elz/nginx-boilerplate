@@ -1,0 +1,5 @@
+.env
+# Token da Cloudflare
+secrets/
+# Certificados e conta ACME (backup junto com a VM, nunca no git)
+data/

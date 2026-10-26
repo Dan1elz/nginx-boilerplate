@@ -1,0 +1,22 @@
+# Exemplo de site (não é carregado: o nginx só lê sites/*.conf).
+# Gere os seus com: scripts/new-site.sh <hostname> <alias:porta> [web|api|s3]
+#
+# exemplo.example.com → exemplo-web:80 (web)
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name exemplo.example.com;
+
+    include /etc/nginx/snippets/site.conf;
+    include /etc/nginx/snippets/errors-html.conf;
+
+    # Variável: o nome é resolvido a cada requisição (container parado = 502 só aqui)
+    set $upstream http://exemplo-web:80;
+
+    location / {
+        proxy_pass $upstream;
+        include /etc/nginx/snippets/proxy.conf;
+        # WebSocket (HMR do Vite, etc.) fica aberto; sem isso cai a cada 60s
+        proxy_read_timeout 1h;
+    }
+}
